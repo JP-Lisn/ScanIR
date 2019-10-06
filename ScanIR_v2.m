@@ -31,7 +31,7 @@ function varargout = ScanIR_v2(varargin)
 %  Copyright 2011
 
 
-% Last Modified by GUIDE v2.5 27-Sep-2019 13:47:06
+% Last Modified by GUIDE v2.5 05-Oct-2019 22:01:07
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -89,6 +89,7 @@ handles.app.azPositionData = [str2double(get(handles.az_start,'String')) str2dou
 handles.app.elPositionData = [str2double(get(handles.el_start,'String')) str2double(get(handles.el_interval, 'String')) str2double(get(handles.el_end, 'String')) ];
 handles.app.seriesInfo = []; % stores the ID numbers of positions at the end of each series
 handles.app.isBRIR = false; % distinguish HRIR from BRIR
+handles.app.sig_level = 0.6;
 
 handles.hrir_az = []; % row vector of azimuths for HRIR measurements
 handles.hrir_el = []; % row vector of elevations for HRIR measurements
@@ -122,7 +123,7 @@ if ( strcmp(opening, 'createNew') )
     handles.app.sigLength = setup.sigLength;
     handles.app.irLength = setup.irLength;
     handles.specs.sampleRate = setup.sampleRate;
-    handles.app.numInputChls = setup.numInputChls;
+    handles.app.numInputChls = 1:setup.numInputChls;
     handles.app.numOutputChls = setup.numOutputChls;
     handles.app.outMode = setup.outMode;
     handles.app.numPlays = setup.numPlays;
@@ -135,14 +136,16 @@ if ( strcmp(opening, 'createNew') )
         handles.motor.stepper.RPM = setup.motor.rpm;
     end
     % audio device selection
-    handles.specs.audioDeviceInfo = setup.audioDeviceInfo;
-    handles.maxOuts = handles.specs.audioDeviceInfo.NrOutputChannels;
-    handles.maxIns = handles.specs.audioDeviceInfo.NrInputChannels;
+    handles.specs.IpDeviceInfo = setup.IpDevInfo;
+    handles.specs.OpDeviceInfo = setup.OpDevInfo;
+    handles.maxOuts = handles.specs.OpDeviceInfo.NrOutputChannels;
+    handles.maxIns = handles.specs.IpDeviceInfo.NrInputChannels;
     
     handles.sessionName = setup.sessionName;
     set(handles.figure1, 'Name', ['ScanIR Session: ', handles.sessionName]);
     set(handles.sessionText,'String',handles.sessionName);
-    set(handles.textAudioInputDevice,'String',setup.audioDeviceInfo.DeviceName);
+    set(handles.textAudioInputDevice,'String',setup.IpDevInfo.DeviceName);
+    set(handles.textAudioOutputDevice,'String',setup.OpDevInfo.DeviceName);
     
     if (handles.app.sigLength == 1)
         set(handles.sigLengthDisp, 'String', strcat(num2str(handles.app.sigLength),' second'));
@@ -157,12 +160,10 @@ elseif ( strcmp(opening, 'loadSession') )
     handles = loadFile(hObject, handles);
     % find maximum number of output and input channels
     InitializePsychSound;
-    dev = PsychPortAudio('GetDevices')
+    dev = PsychPortAudio('GetDevices');
     [m n] = size(dev);
-    
     handles.maxOuts = 0;
     handles.maxIns = 0;
-    
     for k = 1:n
         testOuts = getfield(dev, {1,k}, 'NrOutputChannels');
         if (handles.maxOuts < testOuts)
@@ -184,19 +185,12 @@ if exist('handles.loaded')
     end
 end
 
-
-
-
-%Initialize excititation Lvl (Scale Factor) 
-handles.app.excitationLvl = 0.015; % set low for speaker safety
-set(handles.excitationLvlEdit, 'String', num2str(handles.app.excitationLvl));
-
-handles.app.outchl = str2double(get(handles.outChannelEdit, 'String'));
+handles.app.outchl = 1:str2double(get(handles.outChannelEdit, 'String'));
 
 % update 'setup' panel
 set(handles.sigTypeDisp, 'String', handles.specs.signalType);
-set(handles.srateDisp, 'String', strcat(num2str(handles.specs.sampleRate),' samples/second'));
-set(handles.numinchlsDisp, 'String', num2str(handles.app.numInputChls));
+set(handles.srateDisp, 'String', strcat(num2str(handles.specs.sampleRate),' Hz'));
+set(handles.numinchlsDisp, 'String', num2str(length(handles.app.numInputChls)));
 
 % BRIR flag
 if (handles.app.inMode == 2 && handles.app.irLength/handles.specs.sampleRate >= 1)
@@ -240,7 +234,7 @@ if handles.app.inMode > 1
 else
     set(handles.plottype_popup, 'String', 'Time|Frequency|Energy Decay Curve');
 end
-for ch = 1:handles.app.numInputChls
+for ch = 1:length(handles.app.numInputChls)
     channelLabels{ch} = strcat('|Chl: ',num2str(ch));
 end
 set(handles.chl_popup, 'String', ['All Channels',[channelLabels{:}]]);
@@ -347,7 +341,7 @@ if ( handles.app.outMode == 1 )
     handles = measurePosition(hObject, handles);
 elseif(handles.app.outMode == 2 && handles.app.currID > size(handles.data,2) )
     for k = 1:handles.app.npositions(handles.numSeries)
-        handles.app.outchl = k;
+        handles.app.outchl = 1:k;
         handles = measurePosition(hObject, handles);
         drawnow;
         if (k < handles.app.npositions(handles.numSeries))
@@ -356,7 +350,7 @@ elseif(handles.app.outMode == 2 && handles.app.currID > size(handles.data,2) )
     end
 elseif ( handles.app.outMode == 2 && handles.app.currID <= size(handles.data,2) )
     handles = calcModID(hObject, handles);
-    handles.app.outchl = handles.modID;
+    handles.app.outchl = 1:handles.modID;
     handles = measurePosition(hObject, handles);
 end
 
@@ -608,7 +602,7 @@ else % if we're loading HRIRs from a different database with no ScanIR-specific 
     if handles.app.isBRIR
         modeString = 'BRIR           ';
     end
-    handles.app.numInputChls = 2;
+    handles.app.numInputChls = 1:2;
     disp('Loading HRIR database - you must have 2 active input channels to record extra HRIR positions.');
     if handles.app.isBRIR
         modeString = 'BRIR           ';
@@ -675,7 +669,7 @@ end
 plottype = get(handles.plottype_popup, 'Value');
 plotchls = get(handles.chl_popup,'Value')-1;
 if (plotchls == 0 || plottype == 4|| plottype == 5)
-    plotchls = 1:handles.app.numInputChls;
+    plotchls = 1:length(handles.app.numInputChls);
 end
 offset = 50;
 
@@ -788,7 +782,7 @@ elseif (plottype == 4) %time domain cascade
         plot(handles.plotarea, yScale * plot_data(:,i)+i);
         hold on;
     end
-    set(handles.plotarea,'ytick', [1:handles.app.numInputChls]);
+    set(handles.plotarea,'ytick', [1:length(handles.app.numInputChls)]);
     xlabel('Time (samples)');
     ylabel('Channel');
     yL = get(handles.plotarea, 'ylim');
@@ -799,7 +793,7 @@ elseif (plottype == 5) %frequency - cascade
     handles.chl_popup.Enable = 'on';
     set(handles.smooth_popup,'Value',1);
     handles.smooth_popup.Enable = 'off';
-    if (handles.app.numInputChls == 1)
+    if (length(handles.app.numInputChls) == 1)
         set(handles.plottype_popup, 'Value', 2);
         plotresponse(hObject,handles);
     else
@@ -823,7 +817,7 @@ elseif (plottype == 5) %frequency - cascade
         set(gca,'Xdir','reverse');
         ylabel('Frequency (kHz)');
         zlabel('dB');
-        set(handles.plotarea,'xtick', [1:handles.app.numInputChls]);
+        set(handles.plotarea,'xtick', [1:length(handles.app.numInputChls)]);
     end
 end
 
@@ -1194,13 +1188,13 @@ if (currentValue < 1 || isnan(currentValue))
     handles.app.outchl = 1;
     set(handles.outChannelEdit, 'String', num2str(1));
 elseif (currentValue > handles.maxOuts)
-    handles.app.outchl = handles.maxOuts;
+    handles.app.outchl = 1:handles.maxOuts;
     set(handles.outChannelEdit, 'String', num2str(handles.maxOuts));
 elseif (currentValue ~= round(currentValue))
-    handles.app.outchl = floor(currentValue);
+    handles.app.outchl = 1:floor(currentValue);
     set(handles.outChannelEdit, 'String', num2str(handles.app.outchl));
 else
-    handles.app.outchl = currentValue;
+    handles.app.outchl = 1:currentValue;
 end
 
 guidata(hObject,handles);
@@ -1242,7 +1236,6 @@ disp(handles.app.outchl);
 %if (handles.app.irLength > handles.specs.sampleRate)
 recLen = handles.app.irLength+handles.specs.sampleRate;
 showTime=(recLen/handles.specs.sampleRate);% record an additional second more than we need
-
 %else
 %    recLen = handles.specs.sampleRate*2;
 %end
@@ -1253,7 +1246,8 @@ fprintf('Recording Length: %d seconds',showTime);
 % Send signal
 if ( strcmpi (handles.specs.signalType, 'Sine Sweep') || strcmpi (handles.specs.signalType, 'Sine-Sweep'))
     % Sinesweep
-    y = sweepZap_selectch(handles.specs.audioDeviceInfo, ...
+    y = sweepZap_selectch(handles.specs.IpDeviceInfo, ...
+        handles.specs.OpDeviceInfo, ...
         handles.app.outchl, ...
         handles.app.numInputChls, ...
         handles.specs.sampleRate, ...
@@ -1261,31 +1255,30 @@ if ( strcmpi (handles.specs.signalType, 'Sine Sweep') || strcmpi (handles.specs.
         recLen,handles.app.numPlays,...
         20, ...
         handles.specs.sampleRate/2, ...
-        handles.app.excitationLvl,  ...
+        handles.app.sig_level,  ...
         savewav);
 elseif ( strcmpi (handles.specs.signalType, 'MLS') )
     % Minimum length sequence
     mlsLen = nextpow2(handles.app.sigLength * handles.specs.sampleRate + 1);
-    y = MlsZap_selectch(handles.specs.audioDeviceInfo, ...
+    y = MlsZap_selectch(handles.specs.IpDeviceInfo, ...
+        handles.specs.OpDeviceInfo, ...
         handles.app.outchl,...
         handles.app.numInputChls,...
         handles.specs.sampleRate,...
         mlsLen,recLen,...
         handles.app.numPlays,...
-        handles.app.excitationLvl,...
-        savewav);
+        handles.app.sig_level,savewav);
 elseif ( strcmpi (handles.specs.signalType, 'Golay Codes') || strcmpi (handles.specs.signalType, 'Golay-Codes'))
     % Golay code
     golayLen = nextpow2(handles.app.sigLength * handles.specs.sampleRate + 1);
-    y = golayZap_selectch(handles.specs.audioDeviceInfo,...
+    y = golayZap_selectch(handles.specs.IpDeviceInfo,...
+        handles.specs.OpDeviceInfo, ...
         handles.app.outchl, ...
         handles.app.numInputChls,...
         handles.specs.sampleRate,...
         golayLen,recLen,...
         handles.app.numPlays,...
-        1, ...
-        handles.app.excitationLvl, ...
-        savewav);
+        1,handles.app.sig_level,savewav);
 end
 
 handles.data(handles.app.currID).rawIR = y;
@@ -1299,9 +1292,14 @@ fprintf('Recording completed! \n\n')
 
 if ( firstIRind < handles.specs.sampleRate + 1 )
     handles.data(handles.app.currID).IR = y(firstIRind-offset:firstIRind-offset+handles.app.irLength-1, :);
+    handles.lowSNR = 0;
+    set(handles.warn_text,'String','');
 else
+    set(handles.warn_text,'String','ATTENTION: LOW SNR - retake the measurement to compute analysis parameters');
     warning('LOW SNR - THE EXCITATION SIGNAL MAY NOT BE STRONG ENOUGH');
+    beep;
     handles.data(handles.app.currID).IR = y(handles.specs.sampleRate + 1:end);
+    handles.lowSNR = 1;
 end
 handles.data(handles.app.currID).azimuth = str2double(get(handles.az_edit, 'String'));
 handles.data(handles.app.currID).elevation = str2double(get(handles.el_edit, 'String'));
@@ -1316,8 +1314,15 @@ end
 set(handles.warn_text,'Visible','on');
 set(handles.warn_text,'String','Computing analysis parameters');
 drawnow;
-handles = runAnalysis(handles);
-set(handles.warn_text,'String','');
+if ~handles.lowSNR
+    handles = runAnalysis(handles);
+    disp('Running Analysis ...');
+    set(handles.warn_text,'String','');
+else
+    warning('THE SNR IS TOO LOW TO COMPUTE THE ANALYSIS');
+    set(handles.warn_text,'String','ATTENTION: LOW SNR - retake the measurement to compute analysis parameters');
+    handles = resetFields(handles);
+end
 drawnow;
 plotresponse(hObject,handles);
 set(handles.warn_text,'Visible','off');
@@ -1325,25 +1330,20 @@ guidata(hObject, handles);
 
 % when we go forward
 function handles = goForward(hObject, handles)
-
 if (handles.app.currID<=size(handles.data,2))
     handles.app.currID = handles.app.currID+1;
 end
-
 if (handles.app.currID == 2)
     set(handles.backButton, 'Enable', 'on');
 end
-
 % reactivate hrir position panel if you've moved past sorted data
 if ( (handles.app.inMode == 2) && (handles.app.sorted == 1) && ( handles.app.currID - 1 == handles.sizeLoadedData ) )
     handles = updateHRIR(hObject,handles);
     set(handles.hrir_panel, 'Visible', 'on');
 end
-
 if (handles.app.inMode == 2) % in HRIR mode
     if ( handles.app.currID - 1 == handles.app.seriesInfo(handles.numSeries) ) % moving forward to another series (may or may not be new)
         handles.numSeries = handles.numSeries + 1;
-        
         if ( (handles.app.currID > size(handles.data,2) ) &&(handles.numSeries ~= length(handles.app.npositions)) ) % going forward to a new series
             handles = newSeries(hObject, handles);
         end
@@ -1357,15 +1357,12 @@ if (handles.app.inMode == 2) % in HRIR mode
         set(handles.el_start,'String', num2str(handles.app.elPositionData(handles.numSeries,1)));
         set(handles.el_interval,'String', num2str(handles.app.elPositionData(handles.numSeries,2)));
         set(handles.el_end,'String', num2str(handles.app.elPositionData(handles.numSeries,3)));
-    end
-    
+    end    
     if (handles.app.currID > size(handles.data,2)) % when we're going forward to a new recording index
         set(handles.forwardButton, 'Enable', 'off');
-        handles = calcModID(hObject, handles);
-        
+        handles = calcModID(hObject, handles);        
         if (handles.app.outMode == 1) % single channel output mode
-            elIndex = ceil(handles.modID/length(handles.hrir_az));
-            
+            elIndex = ceil(handles.modID/length(handles.hrir_az));            
             if (mod(handles.modID,length(handles.hrir_az)) == 0)
                 azIndex = length(handles.hrir_az);
             else
@@ -1380,8 +1377,7 @@ if (handles.app.inMode == 2) % in HRIR mode
         set(handles.az_edit, 'String', num2str(currentAz));
         set(handles.el_edit, 'String', num2str(currentEl));
     end
-else % in Mono or Multi-input mode
-    
+else % in Mono or Multi-input mode    
     if (handles.app.currID > size(handles.data,2)) % when we're going forward to a new position
         set(handles.forwardButton, 'Enable', 'off');
     end
@@ -1823,23 +1819,59 @@ set(handles.clockradio,'Value',0);
 guidata(hObject,handles);
 
 
-function excitationLvlEdit_Callback(hObject, eventdata, handles)
-% hObject    handle to excitationLvlEdit (see GCBO)
+% --- Executes on button press in git_validator.
+function git_validator_Callback(hObject, eventdata, handles)
+% hObject    handle to git_validator (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hints: get(hObject,'String') returns contents of excitationLvlEdit as text
-%        str2double(get(hObject,'String')) returns contents of excitationLvlEdit as a double
 
-value = str2double(get(hObject,'String'));
-set(handles.excitationLvlSlider, 'Value', value); 
-handles.app.excitationLvl = value; 
-guidata(hObject, handles);
+% --- Executes on slider movement.
+function level_slider_Callback(hObject, eventdata, handles)
+% hObject    handle to level_slider (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
 
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+lev = get(handles.level_slider,'Value');
+handles.app.sig_level = lev;
+set(handles.edit_level,'String',num2str(lev));
+guidata(hObject,handles);
 
 % --- Executes during object creation, after setting all properties.
-function excitationLvlEdit_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to excitationLvlEdit (see GCBO)
+function level_slider_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to level_slider (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+
+function edit_level_Callback(hObject, eventdata, handles)
+% hObject    handle to edit_level (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of edit_level as text
+%        str2double(get(hObject,'String')) returns contents of edit_level as a double
+lev = str2double(get(handles.edit_level,'String'));
+if (lev > 1 || lev < 0 || isnan(lev))
+    warning('Excitation level must be set to a value between 0 and 1');
+    set(handles.edit_level,'String',handles.app.sig_level);
+else
+    set(handles.level_slider,'Value',lev);
+    handles.app.sig_level = lev;
+end
+guidata(hObject,handles);
+
+% --- Executes during object creation, after setting all properties.
+function edit_level_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edit_level (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -1848,49 +1880,3 @@ function excitationLvlEdit_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-
-
-% --- Executes on excitation slider movement.
-function excitationLvlSlider_Callback(hObject, eventdata, handles)
-% hObject    handle to excitation slider
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-value = 1 - get(hObject, 'Value');
-handles.app.excitationLvl = value;
-set(handles.excitationLvlEdit, 'String', num2str(value)); 
-guidata(hObject, handles); 
-
-
-% --- Executes during object creation, after setting all properties.
-function excitationLvlSlider_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to excitationLvlSlider (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-
-% Hint: slider controls usually have a light gray background.
-if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor',[.9 .9 .9]);
-end
-
-
-% --- Executes on button press in togglebutton2.
-function togglebutton2_Callback(hObject, eventdata, handles)
-% hObject    handle to togglebutton2 (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-value = get(hObject, 'Value');
-
-if value == 0
-    set(handles.excitationLvlEdit,'Enable', 'off')
-    set(handles.excitationLvlSlider,'Enable', 'off')
-    set(handles.measureButton, 'Enable', 'on')
-else
-    %start volume control mode    
-    set(handles.excitationLvlEdit,'Enable','on')
-    set(handles.excitationLvlSlider,'Enable','on')
-    set(handles.measureButton, 'Enable', 'off')
-end
-
-guidata(hObject, handles); 
